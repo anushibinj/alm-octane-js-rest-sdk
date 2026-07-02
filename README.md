@@ -437,6 +437,14 @@ Or run a specific test
 $ npm test test/query.js
 ```
 
+## MCP server
+
+An MCP server implementation is included in this repository.
+
+- Usage documentation: [`mcp/README.md`](mcp/README.md)
+- Start command: `npm run mcp:start`
+- MCP-focused tests: `npm run test:mcp`
+
 ## What's new :newspaper: <a name="whats-new"></a>
 * 26.2.0
   * Fixed vulnerabilities related to external dependencies.
