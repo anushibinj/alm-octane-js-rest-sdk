@@ -100,6 +100,7 @@ Example configuration:
 - Generic passthrough: `octane_custom_request`
 
 If startup CLI args are used, assistants should directly call data tools; they will use the preconfigured `default` session.
+When startup config is present, session setup tools are intentionally hidden from the MCP tool list to reduce connect/session-check loops.
 
 ## Query options
 

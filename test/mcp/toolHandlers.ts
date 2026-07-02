@@ -49,6 +49,23 @@ function textResult(result: { content: Array<{ text: string }> }): unknown {
 }
 
 describe('mcp tool handlers', () => {
+  it('hides session setup tools when a startup session exists', async () => {
+    const client = new FakeOctaneClient();
+    const store = new OctaneSessionStore(() => client);
+    store.connect('default', {
+      server: 'https://example',
+      sharedSpace: 1001,
+      workspace: 1002,
+      token: 'abc',
+    });
+    const handlers = new McpToolHandlers(store);
+
+    const names = handlers.listTools().map((tool) => tool.name);
+    assert.ok(!names.includes('connect'));
+    assert.ok(!names.includes('authenticate'));
+    assert.ok(names.includes('octane_get'));
+  });
+
   it('reuses preconfigured default session on connect without params', async () => {
     const client = new FakeOctaneClient();
     const store = new OctaneSessionStore(() => client);

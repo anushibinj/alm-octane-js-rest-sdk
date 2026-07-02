@@ -391,6 +391,7 @@ export class McpToolHandlers {
     description: string;
     inputSchema: Record<string, unknown>;
   }> {
+    const hasPreconfiguredSession = this.sessionStore.list().length > 0;
     const withSessionId = {
       sessionId: { type: 'string', description: 'Logical session ID' },
     };
@@ -407,57 +408,68 @@ export class McpToolHandlers {
       },
     };
 
-    return [
-      {
-        name: 'connect',
-        description: 'Create or replace an Octane session',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            ...withSessionId,
-            server: { type: 'string' },
-            sharedSpace: { type: 'number' },
-            workspace: { type: 'number' },
-            user: { type: 'string' },
-            password: { type: 'string' },
-            clientId: { type: 'string' },
-            clientSecret: { type: 'string' },
-            token: { type: 'string' },
-            proxy: { type: 'string' },
-            proxyUsername: { type: 'string' },
-            proxyPassword: { type: 'string' },
-            headers: { type: 'object' },
+    const tools: Array<{
+      name: string;
+      description: string;
+      inputSchema: Record<string, unknown>;
+    }> = [];
+
+    if (!hasPreconfiguredSession) {
+      tools.push(
+        {
+          name: 'connect',
+          description: 'Create or replace an Octane session',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              ...withSessionId,
+              server: { type: 'string' },
+              sharedSpace: { type: 'number' },
+              workspace: { type: 'number' },
+              user: { type: 'string' },
+              password: { type: 'string' },
+              clientId: { type: 'string' },
+              clientSecret: { type: 'string' },
+              token: { type: 'string' },
+              proxy: { type: 'string' },
+              proxyUsername: { type: 'string' },
+              proxyPassword: { type: 'string' },
+              headers: { type: 'object' },
+            },
+            required: [],
           },
-          required: [],
         },
-      },
-      {
-        name: 'disconnect',
-        description: 'Close an Octane session',
-        inputSchema: {
-          type: 'object',
-          properties: withSessionId,
-          required: [],
+        {
+          name: 'disconnect',
+          description: 'Close an Octane session',
+          inputSchema: {
+            type: 'object',
+            properties: withSessionId,
+            required: [],
+          },
         },
-      },
-      {
-        name: 'authenticate',
-        description: 'Authenticate an existing Octane session',
-        inputSchema: {
-          type: 'object',
-          properties: withSessionId,
-          required: [],
+        {
+          name: 'authenticate',
+          description: 'Authenticate an existing Octane session',
+          inputSchema: {
+            type: 'object',
+            properties: withSessionId,
+            required: [],
+          },
         },
-      },
-      {
-        name: 'sign_out',
-        description: 'Sign out an existing Octane session',
-        inputSchema: {
-          type: 'object',
-          properties: withSessionId,
-          required: [],
-        },
-      },
+        {
+          name: 'sign_out',
+          description: 'Sign out an existing Octane session',
+          inputSchema: {
+            type: 'object',
+            properties: withSessionId,
+            required: [],
+          },
+        }
+      );
+    }
+
+    tools.push(
       {
         name: 'octane_get',
         description: 'Execute GET on an entity collection',
@@ -587,8 +599,10 @@ export class McpToolHandlers {
           },
           required: ['customUrl', 'operation'],
         },
-      },
-    ];
+      }
+    );
+
+    return tools;
   }
 
   async runTool(name: string, input: unknown): Promise<McpToolResponse> {
