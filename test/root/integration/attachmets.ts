@@ -52,7 +52,16 @@ describe('[attachments - generic SDK]', function () {
   let octane: Octane;
 
   before('initializations', async function () {
-    const configObject = convertToRootConfig();
+    let configObject: any;
+    try {
+      configObject = convertToRootConfig();
+    } catch (error: any) {
+      if (error && error.code === 'ENOENT') {
+        this.skip();
+        return;
+      }
+      throw error;
+    }
     octane = new Octane(configObject);
 
     const defect = await octane
@@ -74,6 +83,9 @@ describe('[attachments - generic SDK]', function () {
   });
 
   after('cleanup', async function () {
+    if (!octane || !defectId) {
+      return;
+    }
     await octane.delete(Octane.entityTypes.defects).at(defectId).execute();
   });
 
