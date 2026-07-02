@@ -40,6 +40,9 @@ Optional flag:
 
 - `--session-id <value>`: pre-created session id (defaults to `default`)
 
+When startup args are used, tools can omit `sessionId` and the server uses `default`.
+Calling `connect` with empty arguments (`{}`) reuses the already preconfigured default session.
+
 ## MCP client configuration
 
 Example configuration:
@@ -57,7 +60,7 @@ Example configuration:
 
 ## Usage flow
 
-1. Call `connect` with `sessionId`, `server`, `sharedSpace`, `workspace`, and either `token` or `user` + `password`.
+1. If startup CLI args were not used, call `connect` with `server`, `sharedSpace`, `workspace`, and either `token` or `user` + `password` (`sessionId` optional, defaults to `default`).
 2. Optionally call `authenticate` (required for credential mode before first request in most flows).
 3. Call data tools (`octane_get`, `octane_create`, `octane_update`, `octane_update_bulk`, `octane_delete`).
 4. For attachments, use `octane_get_attachment_content` and `octane_upload_attachment` (base64 payloads).

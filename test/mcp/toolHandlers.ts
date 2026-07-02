@@ -49,6 +49,30 @@ function textResult(result: { content: Array<{ text: string }> }): unknown {
 }
 
 describe('mcp tool handlers', () => {
+  it('reuses preconfigured default session on connect without params', async () => {
+    const client = new FakeOctaneClient();
+    const store = new OctaneSessionStore(() => client);
+    const handlers = new McpToolHandlers(store);
+
+    await handlers.runTool('connect', {
+      sessionId: 'default',
+      server: 'https://example',
+      sharedSpace: 1001,
+      workspace: 1002,
+      token: 'abc',
+    });
+
+    const result = await handlers.runTool('connect', {});
+    const payload = textResult(result as { content: Array<{ text: string }> }) as {
+      connected: boolean;
+      reused: boolean;
+      session: { sessionId: string };
+    };
+    assert.strictEqual(payload.connected, true);
+    assert.strictEqual(payload.reused, true);
+    assert.strictEqual(payload.session.sessionId, 'default');
+  });
+
   it('connects and returns session status', async () => {
     const client = new FakeOctaneClient();
     const store = new OctaneSessionStore(() => client);
@@ -81,6 +105,25 @@ describe('mcp tool handlers', () => {
       sharedSpace: 1001,
       workspace: 1002,
       token: 'abc',
+    });
+
+    it('uses default session when sessionId is omitted', async () => {
+      const client = new FakeOctaneClient();
+      const store = new OctaneSessionStore(() => client);
+      const handlers = new McpToolHandlers(store);
+
+      await handlers.runTool('connect', {
+        server: 'https://example',
+        sharedSpace: 1001,
+        workspace: 1002,
+        token: 'abc',
+      });
+      await handlers.runTool('octane_get', {
+        entityName: 'defects',
+        options: { at: 42 },
+      });
+
+      assert.deepStrictEqual(client.calls, ['at:42', 'get:defects', 'execute']);
     });
     await handlers.runTool('octane_get', {
       sessionId: 's1',

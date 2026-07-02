@@ -35,6 +35,13 @@ function ok(payload: unknown): McpToolResponse {
   };
 }
 
+function parseSessionId(value: unknown): string {
+  if (value === undefined) {
+    return 'default';
+  }
+  return asString(value, 'arguments.sessionId');
+}
+
 function extractErrorDetails(error: unknown): unknown {
   if (!error || typeof error !== 'object') {
     return undefined;
@@ -95,10 +102,16 @@ function applyQueryOptions(client: OctaneClient, options?: QueryOptions): Octane
 
 function parseConnectInput(input: unknown): ConnectInput {
   const source = asObject(input, 'arguments');
-  const sessionId = asString(source.sessionId, 'arguments.sessionId');
-  const server = asString(source.server, 'arguments.server');
-  const sharedSpace = asNumber(source.sharedSpace, 'arguments.sharedSpace');
-  const workspace = asNumber(source.workspace, 'arguments.workspace');
+  const sessionId = parseSessionId(source.sessionId);
+  const server = asOptionalString(source.server, 'arguments.server');
+  const sharedSpace =
+    source.sharedSpace === undefined
+      ? undefined
+      : asNumber(source.sharedSpace, 'arguments.sharedSpace');
+  const workspace =
+    source.workspace === undefined
+      ? undefined
+      : asNumber(source.workspace, 'arguments.workspace');
   const user = asOptionalString(source.user, 'arguments.user');
   const password = asOptionalString(source.password, 'arguments.password');
   const token = asOptionalString(source.token, 'arguments.token');
@@ -111,12 +124,27 @@ function parseConnectInput(input: unknown): ConnectInput {
     source.proxyPassword,
     'arguments.proxyPassword'
   );
-  const headers = source.headers as Params['headers'] | undefined;
+  const headers =
+    source.headers === undefined
+      ? undefined
+      : (asObject(source.headers, 'arguments.headers') as Params['headers']);
 
-  if (!token && (!user || !password)) {
+  if (server === undefined && sharedSpace === undefined && workspace === undefined) {
+    return {
+      sessionId,
+      server: '',
+      sharedSpace: 0,
+      workspace: 0,
+    };
+  }
+
+  if (!server || sharedSpace === undefined || workspace === undefined) {
     throw new McpValidationError(
-      'Provide either token or both user/password for connect'
+      'Provide server, sharedSpace and workspace together for connect'
     );
+  }
+  if (!token && (!user || !password)) {
+    throw new McpValidationError('Provide either token or both user/password for connect');
   }
 
   return {
@@ -137,21 +165,21 @@ function parseConnectInput(input: unknown): ConnectInput {
 function parseSessionStatusInput(input: unknown): SessionStatusInput {
   const source = asObject(input, 'arguments');
   return {
-    sessionId: asString(source.sessionId, 'arguments.sessionId'),
+    sessionId: parseSessionId(source.sessionId),
   };
 }
 
 function parseDisconnectInput(input: unknown): DisconnectInput {
   const source = asObject(input, 'arguments');
   return {
-    sessionId: asString(source.sessionId, 'arguments.sessionId'),
+    sessionId: parseSessionId(source.sessionId),
   };
 }
 
 function parseGetInput(input: unknown): GetInput {
   const source = asObject(input, 'arguments');
   return {
-    sessionId: asString(source.sessionId, 'arguments.sessionId'),
+    sessionId: parseSessionId(source.sessionId),
     entityName: asString(source.entityName, 'arguments.entityName'),
     options: asQueryOptions(source.options, 'arguments.options'),
   };
@@ -160,7 +188,7 @@ function parseGetInput(input: unknown): GetInput {
 function parseCreateInput(input: unknown): CreateInput {
   const source = asObject(input, 'arguments');
   return {
-    sessionId: asString(source.sessionId, 'arguments.sessionId'),
+    sessionId: parseSessionId(source.sessionId),
     entityName: asString(source.entityName, 'arguments.entityName'),
     body: asObject(source.body, 'arguments.body'),
     options: asQueryOptions(source.options, 'arguments.options'),
@@ -170,7 +198,7 @@ function parseCreateInput(input: unknown): CreateInput {
 function parseUpdateInput(input: unknown): UpdateInput {
   const source = asObject(input, 'arguments');
   return {
-    sessionId: asString(source.sessionId, 'arguments.sessionId'),
+    sessionId: parseSessionId(source.sessionId),
     entityName: asString(source.entityName, 'arguments.entityName'),
     body: asObject(source.body, 'arguments.body'),
     options: asQueryOptions(source.options, 'arguments.options'),
@@ -180,7 +208,7 @@ function parseUpdateInput(input: unknown): UpdateInput {
 function parseUpdateBulkInput(input: unknown): UpdateBulkInput {
   const source = asObject(input, 'arguments');
   return {
-    sessionId: asString(source.sessionId, 'arguments.sessionId'),
+    sessionId: parseSessionId(source.sessionId),
     entityName: asString(source.entityName, 'arguments.entityName'),
     body: asObject(source.body, 'arguments.body'),
     options: asQueryOptions(source.options, 'arguments.options'),
@@ -196,7 +224,7 @@ function parseDeleteInput(input: unknown): DeleteInput {
     );
   }
   return {
-    sessionId: asString(source.sessionId, 'arguments.sessionId'),
+    sessionId: parseSessionId(source.sessionId),
     entityName: asString(source.entityName, 'arguments.entityName'),
     options,
   };
@@ -209,7 +237,7 @@ function parseGetAttachmentContentInput(input: unknown): GetAttachmentContentInp
     throw new McpValidationError('get attachment content requires options.at');
   }
   return {
-    sessionId: asString(source.sessionId, 'arguments.sessionId'),
+    sessionId: parseSessionId(source.sessionId),
     options,
   };
 }
@@ -217,7 +245,7 @@ function parseGetAttachmentContentInput(input: unknown): GetAttachmentContentInp
 function parseUploadAttachmentInput(input: unknown): UploadAttachmentInput {
   const source = asObject(input, 'arguments');
   return {
-    sessionId: asString(source.sessionId, 'arguments.sessionId'),
+    sessionId: parseSessionId(source.sessionId),
     attachmentName: asString(source.attachmentName, 'arguments.attachmentName'),
     attachmentDataBase64: asString(
       source.attachmentDataBase64,
@@ -248,7 +276,7 @@ function parseCustomRequestInput(input: unknown): CustomRequestInput {
   }
 
   return {
-    sessionId: asString(source.sessionId, 'arguments.sessionId'),
+    sessionId: parseSessionId(source.sessionId),
     customUrl: asString(source.customUrl, 'arguments.customUrl'),
     operation: asString(source.operation, 'arguments.operation'),
     body: bodyValue as object | string | undefined,
@@ -303,7 +331,7 @@ export class McpToolHandlers {
             proxyPassword: { type: 'string' },
             headers: { type: 'object' },
           },
-          required: ['sessionId', 'server', 'sharedSpace', 'workspace'],
+          required: [],
         },
       },
       {
@@ -312,7 +340,7 @@ export class McpToolHandlers {
         inputSchema: {
           type: 'object',
           properties: withSessionId,
-          required: ['sessionId'],
+          required: [],
         },
       },
       {
@@ -321,7 +349,7 @@ export class McpToolHandlers {
         inputSchema: {
           type: 'object',
           properties: withSessionId,
-          required: ['sessionId'],
+          required: [],
         },
       },
       {
@@ -330,7 +358,7 @@ export class McpToolHandlers {
         inputSchema: {
           type: 'object',
           properties: withSessionId,
-          required: ['sessionId'],
+          required: [],
         },
       },
       {
@@ -339,7 +367,7 @@ export class McpToolHandlers {
         inputSchema: {
           type: 'object',
           properties: withSessionId,
-          required: ['sessionId'],
+          required: [],
         },
       },
       {
@@ -352,7 +380,7 @@ export class McpToolHandlers {
             entityName: { type: 'string' },
             options: queryOptionsSchema,
           },
-          required: ['sessionId', 'entityName'],
+          required: ['entityName'],
         },
       },
       {
@@ -366,7 +394,7 @@ export class McpToolHandlers {
             body: { type: 'object' },
             options: queryOptionsSchema,
           },
-          required: ['sessionId', 'entityName', 'body'],
+          required: ['entityName', 'body'],
         },
       },
       {
@@ -380,7 +408,7 @@ export class McpToolHandlers {
             body: { type: 'object' },
             options: queryOptionsSchema,
           },
-          required: ['sessionId', 'entityName', 'body'],
+          required: ['entityName', 'body'],
         },
       },
       {
@@ -394,7 +422,7 @@ export class McpToolHandlers {
             body: { type: 'object' },
             options: queryOptionsSchema,
           },
-          required: ['sessionId', 'entityName', 'body'],
+          required: ['entityName', 'body'],
         },
       },
       {
@@ -407,7 +435,7 @@ export class McpToolHandlers {
             entityName: { type: 'string' },
             options: queryOptionsSchema,
           },
-          required: ['sessionId', 'entityName', 'options'],
+          required: ['entityName', 'options'],
         },
       },
       {
@@ -419,7 +447,7 @@ export class McpToolHandlers {
             ...withSessionId,
             options: queryOptionsSchema,
           },
-          required: ['sessionId', 'options'],
+          required: ['options'],
         },
       },
       {
@@ -435,7 +463,6 @@ export class McpToolHandlers {
             ownerReference: { type: 'object' },
           },
           required: [
-            'sessionId',
             'attachmentName',
             'attachmentDataBase64',
             'ownerName',
@@ -455,7 +482,7 @@ export class McpToolHandlers {
             body: { type: ['object', 'string'] },
             headers: { type: 'object' },
           },
-          required: ['sessionId', 'customUrl', 'operation'],
+          required: ['customUrl', 'operation'],
         },
       },
     ];
@@ -496,6 +523,10 @@ export class McpToolHandlers {
 
   private async connect(input: unknown): Promise<McpToolResponse> {
     const args = parseConnectInput(input);
+    if (!args.server && args.sharedSpace === 0 && args.workspace === 0) {
+      const descriptor = this.sessionStore.getDescriptor(args.sessionId);
+      return ok({ connected: true, session: descriptor, reused: true });
+    }
     const descriptor = this.sessionStore.connect(args.sessionId, args);
     return ok({ connected: true, session: descriptor });
   }
