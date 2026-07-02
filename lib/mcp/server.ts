@@ -32,8 +32,10 @@ export async function dispatchToolCall(
 export function createMcpServer(handlers?: McpToolHandlers): Server {
   const toolHandlers = handlers ?? new McpToolHandlers();
   const usageInstructions =
-    'For Octane data requests, call a tool instead of replying with a plan. ' +
+    'For Octane data requests, call tools directly and do not send interim status/preamble messages. ' +
+    'Do not end the turn after planning text. Always execute the needed tool call first. ' +
     'If startup auth was configured, use default session without asking for credentials. ' +
+    'Use at most one session check (session_status or list_sessions), then proceed to the actual request. ' +
     'For ticket questions, prefer octane_get_ticket_details.';
   const server = new Server(
     {

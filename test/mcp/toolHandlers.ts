@@ -175,6 +175,26 @@ describe('mcp tool handlers', () => {
     assert.ok(payload.message.includes('not found'));
   });
 
+  it('lists active sessions', async () => {
+    const client = new FakeOctaneClient();
+    const store = new OctaneSessionStore(() => client);
+    const handlers = new McpToolHandlers(store);
+
+    await handlers.runTool('connect', {
+      sessionId: 'a',
+      server: 'https://example',
+      sharedSpace: 1001,
+      workspace: 1002,
+      token: 'abc',
+    });
+    const result = await handlers.runTool('list_sessions', {});
+    const payload = textResult(result as { content: Array<{ text: string }> }) as {
+      sessions: Array<{ sessionId: string }>;
+    };
+    assert.strictEqual(payload.sessions.length, 1);
+    assert.strictEqual(payload.sessions[0].sessionId, 'a');
+  });
+
   it('executes get with query options', async () => {
     const client = new FakeOctaneClient();
     const store = new OctaneSessionStore(() => client);

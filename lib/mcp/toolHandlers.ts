@@ -34,8 +34,10 @@ export interface McpToolResponse {
 }
 
 function ok(payload: unknown): McpToolResponse {
+  const normalizedPayload = payload === undefined ? null : payload;
+  const serialized = JSON.stringify(normalizedPayload, null, 2) ?? 'null';
   return {
-    content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }],
+    content: [{ type: 'text', text: serialized }],
   };
 }
 
@@ -430,6 +432,15 @@ export class McpToolHandlers {
         },
       },
       {
+        name: 'list_sessions',
+        description: 'List active Octane sessions',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          required: [],
+        },
+      },
+      {
         name: 'session_status',
         description: 'Return active session details',
         inputSchema: {
@@ -604,6 +615,8 @@ export class McpToolHandlers {
         return this.connect(input);
       case 'session_status':
         return this.sessionStatus(input);
+      case 'list_sessions':
+        return this.listSessions();
       case 'disconnect':
         return this.disconnect(input);
       case 'authenticate':
@@ -658,6 +671,10 @@ export class McpToolHandlers {
       }
       throw error;
     }
+  }
+
+  private async listSessions(): Promise<McpToolResponse> {
+    return ok({ sessions: this.sessionStore.list() });
   }
 
   private async disconnect(input: unknown): Promise<McpToolResponse> {

@@ -93,7 +93,7 @@ Example configuration:
 
 ## Supported tools
 
-- Session/auth: `connect`, `session_status`, `disconnect`, `authenticate`, `sign_out`
+- Session/auth: `connect`, `session_status`, `list_sessions`, `disconnect`, `authenticate`, `sign_out`
 - Data operations: `octane_get`, `octane_create`, `octane_update`, `octane_update_bulk`, `octane_delete`
 - Convenience: `octane_get_ticket_details` (infers relevant fields from requested detail text)
 - Attachments: `octane_get_attachment_content`, `octane_upload_attachment`
