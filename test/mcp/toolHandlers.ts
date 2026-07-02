@@ -273,4 +273,61 @@ describe('mcp tool handlers', () => {
         })
     );
   });
+
+  it('gets ticket details and infers title field', async () => {
+    const client = new FakeOctaneClient();
+    client.executeResult = { id: 5519852, name: 'My Ticket Title', type: 'work_item' };
+    const store = new OctaneSessionStore(() => client);
+    const handlers = new McpToolHandlers(store);
+
+    await handlers.runTool('connect', {
+      sessionId: 's1',
+      server: 'https://example',
+      sharedSpace: 1001,
+      workspace: 1002,
+      token: 'abc',
+    });
+    const result = await handlers.runTool('octane_get_ticket_details', {
+      sessionId: 's1',
+      ticketId: 5519852,
+      requestedDetail: 'title',
+    });
+    const payload = textResult(result as { content: Array<{ text: string }> }) as {
+      ticketId: number;
+      selectedFields: string[];
+      details: { name: string };
+    };
+    assert.strictEqual(payload.ticketId, 5519852);
+    assert.deepStrictEqual(payload.selectedFields, ['name']);
+    assert.strictEqual(payload.details.name, 'My Ticket Title');
+    assert.deepStrictEqual(client.calls, ['get:work_items', 'at:5519852', 'fields:name', 'execute']);
+  });
+
+  it('gets ticket details and infers multiple fields', async () => {
+    const client = new FakeOctaneClient();
+    client.executeResult = { id: 5519852, phase: { id: 1 }, owner: { id: 2 } };
+    const store = new OctaneSessionStore(() => client);
+    const handlers = new McpToolHandlers(store);
+
+    await handlers.runTool('connect', {
+      sessionId: 's1',
+      server: 'https://example',
+      sharedSpace: 1001,
+      workspace: 1002,
+      token: 'abc',
+    });
+    const result = await handlers.runTool('octane_get_ticket_details', {
+      sessionId: 's1',
+      ticketId: 5519852,
+      requestedDetail: 'status and owner',
+    });
+    const payload = textResult(result as { content: Array<{ text: string }> }) as {
+      selectedFields: string[];
+    };
+    assert.deepStrictEqual(payload.selectedFields, ['phase', 'owner']);
+    assert.deepStrictEqual(
+      client.calls,
+      ['get:work_items', 'at:5519852', 'fields:phase,owner', 'execute']
+    );
+  });
 });

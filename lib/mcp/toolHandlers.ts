@@ -307,6 +307,76 @@ function parseCustomRequestInput(input: unknown): CustomRequestInput {
   };
 }
 
+function parseGetTicketDetailsInput(input: unknown): {
+  sessionId: string;
+  ticketId: number;
+  requestedDetail?: string;
+  requestedFields?: string[];
+} {
+  const source = asObject(input, 'arguments');
+  const ticketId = asNumber(source.ticketId, 'arguments.ticketId');
+  if (ticketId < 0) {
+    throw new McpValidationError('arguments.ticketId must be >= 0');
+  }
+  const requestedDetail =
+    source.requestedDetail === undefined
+      ? undefined
+      : asString(source.requestedDetail, 'arguments.requestedDetail');
+  const requestedFields =
+    source.requestedFields === undefined
+      ? undefined
+      : asOptionalStringArray(source.requestedFields, 'arguments.requestedFields');
+  return {
+    sessionId: parseSessionId(source.sessionId),
+    ticketId,
+    requestedDetail,
+    requestedFields,
+  };
+}
+
+function inferTicketFields(
+  requestedDetail?: string,
+  requestedFields?: string[]
+): string[] {
+  if (requestedFields && requestedFields.length > 0) {
+    return requestedFields;
+  }
+
+  if (!requestedDetail) {
+    return ['name'];
+  }
+
+  const normalized = requestedDetail.toLowerCase();
+  const fields = new Set<string>();
+
+  if (normalized.includes('title') || normalized.includes('name')) {
+    fields.add('name');
+  }
+  if (normalized.includes('status') || normalized.includes('phase')) {
+    fields.add('phase');
+  }
+  if (normalized.includes('owner') || normalized.includes('assignee')) {
+    fields.add('owner');
+  }
+  if (normalized.includes('description') || normalized.includes('detail')) {
+    fields.add('description');
+  }
+  if (normalized.includes('severity')) {
+    fields.add('severity');
+  }
+  if (normalized.includes('priority')) {
+    fields.add('priority');
+  }
+  if (normalized.includes('subtype') || normalized.includes('type')) {
+    fields.add('subtype');
+  }
+
+  if (fields.size === 0) {
+    fields.add('name');
+  }
+  return Array.from(fields);
+}
+
 export class McpToolHandlers {
   private readonly sessionStore: OctaneSessionStore;
 
@@ -496,6 +566,21 @@ export class McpToolHandlers {
         },
       },
       {
+        name: 'octane_get_ticket_details',
+        description:
+          'Get ticket details by id and infer fields from requested detail text',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            ...withSessionId,
+            ticketId: { type: 'number' },
+            requestedDetail: { type: 'string' },
+            requestedFields: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['ticketId'],
+        },
+      },
+      {
         name: 'octane_custom_request',
         description: 'Execute a custom Octane request directly',
         inputSchema: {
@@ -541,6 +626,8 @@ export class McpToolHandlers {
         return this.uploadAttachment(input);
       case 'octane_custom_request':
         return this.customRequest(input);
+      case 'octane_get_ticket_details':
+        return this.getTicketDetails(input);
       default:
         throw new McpValidationError(`Unknown tool "${name}"`);
     }
@@ -671,6 +758,19 @@ export class McpToolHandlers {
       )
     );
     return ok(response);
+  }
+
+  private async getTicketDetails(input: unknown): Promise<McpToolResponse> {
+    const args = parseGetTicketDetailsInput(input);
+    const client = this.sessionStore.getClient(args.sessionId);
+    const selectedFields = inferTicketFields(args.requestedDetail, args.requestedFields);
+    client.get('work_items').at(args.ticketId).fields(...selectedFields);
+    const response = await runClientCall(async () => client.execute());
+    return ok({
+      ticketId: args.ticketId,
+      selectedFields,
+      details: response,
+    });
   }
 }
 
