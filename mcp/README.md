@@ -94,12 +94,11 @@ Example configuration:
 ## Supported tools
 
 - Session/auth: `connect`, `session_status`, `disconnect`, `authenticate`, `sign_out`
-- Session discovery: `list_sessions`
 - Data operations: `octane_get`, `octane_create`, `octane_update`, `octane_update_bulk`, `octane_delete`
 - Attachments: `octane_get_attachment_content`, `octane_upload_attachment`
 - Generic passthrough: `octane_custom_request`
 
-If startup CLI args are used, assistants can call `list_sessions` or `session_status` with no args to detect the preconfigured `default` session.
+If startup CLI args are used, assistants can call `session_status` with no args to detect the preconfigured `default` session.
 
 ## Query options
 

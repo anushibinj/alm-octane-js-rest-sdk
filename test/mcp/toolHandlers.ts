@@ -159,24 +159,20 @@ describe('mcp tool handlers', () => {
     assert.strictEqual(payload.session.sessionId, 'default');
   });
 
-  it('lists active sessions', async () => {
+  it('returns non-throwing disconnected status for unknown session', async () => {
     const client = new FakeOctaneClient();
     const store = new OctaneSessionStore(() => client);
     const handlers = new McpToolHandlers(store);
 
-    await handlers.runTool('connect', {
-      sessionId: 'a',
-      server: 'https://example',
-      sharedSpace: 1001,
-      workspace: 1002,
-      token: 'abc',
-    });
-    const result = await handlers.runTool('list_sessions', {});
+    const result = await handlers.runTool('session_status', { sessionId: 'missing' });
     const payload = textResult(result as { content: Array<{ text: string }> }) as {
-      sessions: Array<{ sessionId: string }>;
+      connected: boolean;
+      sessionId: string;
+      message: string;
     };
-    assert.strictEqual(payload.sessions.length, 1);
-    assert.strictEqual(payload.sessions[0].sessionId, 'a');
+    assert.strictEqual(payload.connected, false);
+    assert.strictEqual(payload.sessionId, 'missing');
+    assert.ok(payload.message.includes('not found'));
   });
 
   it('executes get with query options', async () => {
