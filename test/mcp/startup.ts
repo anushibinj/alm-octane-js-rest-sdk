@@ -89,4 +89,34 @@ describe('mcp startup configuration', () => {
     assert.strictEqual(startup.showHelp, false);
     assert.strictEqual(store.getDescriptor('default').authMode, 'credentials');
   });
+
+  it('preconnects session from env token config', () => {
+    const store = new OctaneSessionStore((_params: Params) => new StubClient());
+    const startup = createStartupConfiguration([], store, {
+      OCTANE_SERVER_URL: 'https://octane.example.com',
+      OCTANE_SHARED_SPACE_ID: '1001',
+      OCTANE_WORKSPACE_ID: '1002',
+      OCTANE_AUTH: 'token',
+      OCTANE_BEARER_TOKEN: 'tok',
+    });
+
+    assert.strictEqual(startup.showHelp, false);
+    assert.strictEqual(store.getDescriptor('default').authMode, 'token');
+  });
+
+  it('preconnects session from env client-credentials config', () => {
+    const store = new OctaneSessionStore((_params: Params) => new StubClient());
+    const startup = createStartupConfiguration([], store, {
+      OCTANE_SERVER_URL: 'https://octane.example.com',
+      OCTANE_SHARED_SPACE_ID: '1001',
+      OCTANE_WORKSPACE_ID: '1002',
+      OCTANE_AUTH: 'client-credentials',
+      OCTANE_CLIENT_ID: 'cid',
+      OCTANE_CLIENT_SECRET: 'csecret',
+      OCTANE_SESSION_ID: 'env-session',
+    });
+
+    assert.strictEqual(startup.showHelp, false);
+    assert.strictEqual(store.getDescriptor('env-session').authMode, 'credentials');
+  });
 });

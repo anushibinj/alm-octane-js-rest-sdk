@@ -55,6 +55,19 @@ Optional flag:
 When startup args are used, tools can omit `sessionId` and the server uses `default`.
 Calling `connect` with empty arguments (`{}`) reuses the already preconfigured default session.
 
+## Environment variables (recommended for ChatBox-style UIs)
+
+If your MCP host has a dedicated environment-variables field, prefer this over long command lines:
+
+- `OCTANE_SERVER_URL`
+- `OCTANE_SHARED_SPACE_ID`
+- `OCTANE_WORKSPACE_ID`
+- `OCTANE_AUTH` = `credentials` | `client-credentials` | `token`
+- For `credentials`: `OCTANE_USERNAME`, `OCTANE_PASSWORD`
+- For `client-credentials`: `OCTANE_CLIENT_ID`, `OCTANE_CLIENT_SECRET`
+- For `token`: `OCTANE_BEARER_TOKEN`
+- Optional: `OCTANE_SESSION_ID` (defaults to `default`)
+
 ## MCP client configuration
 
 Example configuration:
