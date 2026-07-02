@@ -60,6 +60,32 @@ describe('mcp cli args', () => {
       workspace: 1002,
       token: 'tok123',
     });
+
+    it('parses client-credentials startup config', () => {
+      const result = parseCliArgs([
+        '--server-url',
+        'https://octane.example.com',
+        '--shared-space-id',
+        '1001',
+        '--workspace-id',
+        '1002',
+        '--auth',
+        'client-credentials',
+        '--client-id',
+        'cid',
+        '--client-secret',
+        'csecret',
+      ]);
+
+      assert.deepStrictEqual(result.startupConnection, {
+        sessionId: 'default',
+        server: 'https://octane.example.com',
+        sharedSpace: 1001,
+        workspace: 1002,
+        user: 'cid',
+        password: 'csecret',
+      });
+    });
   });
 
   it('throws when auth mode specific args are missing', () => {
@@ -91,6 +117,23 @@ describe('mcp cli args', () => {
           '1002',
           '--auth',
           'token',
+        ]),
+      McpValidationError
+    );
+
+    assert.throws(
+      () =>
+        parseCliArgs([
+          '--server-url',
+          'https://octane.example.com',
+          '--shared-space-id',
+          '1001',
+          '--workspace-id',
+          '1002',
+          '--auth',
+          'client-credentials',
+          '--client-id',
+          'cid',
         ]),
       McpValidationError
     );

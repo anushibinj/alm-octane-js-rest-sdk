@@ -121,6 +121,8 @@ function parseConnectInput(input: unknown): ConnectInput {
       : asNumber(source.workspace, 'arguments.workspace');
   const user = asOptionalString(source.user, 'arguments.user');
   const password = asOptionalString(source.password, 'arguments.password');
+  const clientId = asOptionalString(source.clientId, 'arguments.clientId');
+  const clientSecret = asOptionalString(source.clientSecret, 'arguments.clientSecret');
   const token = asOptionalString(source.token, 'arguments.token');
   const proxy = asOptionalString(source.proxy, 'arguments.proxy');
   const proxyUsername = asOptionalString(
@@ -150,8 +152,18 @@ function parseConnectInput(input: unknown): ConnectInput {
       'Provide server, sharedSpace and workspace together for connect'
     );
   }
-  if (!token && (!user || !password)) {
-    throw new McpValidationError('Provide either token or both user/password for connect');
+  const resolvedUser = user ?? clientId;
+  const resolvedPassword = password ?? clientSecret;
+
+  if ((clientId && !clientSecret) || (!clientId && clientSecret)) {
+    throw new McpValidationError(
+      'Provide both clientId and clientSecret together for connect'
+    );
+  }
+  if (!token && (!resolvedUser || !resolvedPassword)) {
+    throw new McpValidationError(
+      'Provide either token, user/password, or clientId/clientSecret for connect'
+    );
   }
 
   return {
@@ -159,8 +171,8 @@ function parseConnectInput(input: unknown): ConnectInput {
     server,
     sharedSpace,
     workspace,
-    user,
-    password,
+    user: resolvedUser,
+    password: resolvedPassword,
     token,
     proxy,
     proxyUsername,
@@ -332,6 +344,8 @@ export class McpToolHandlers {
             workspace: { type: 'number' },
             user: { type: 'string' },
             password: { type: 'string' },
+            clientId: { type: 'string' },
+            clientSecret: { type: 'string' },
             token: { type: 'string' },
             proxy: { type: 'string' },
             proxyUsername: { type: 'string' },

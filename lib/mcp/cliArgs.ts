@@ -38,6 +38,8 @@ function hasStartupArgs(args: StringMap): boolean {
     args['auth'] !== undefined ||
     args['username'] !== undefined ||
     args['password'] !== undefined ||
+    args['client-id'] !== undefined ||
+    args['client-secret'] !== undefined ||
     args['bearer-token'] !== undefined
   );
 }
@@ -68,7 +70,9 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
     throw new McpValidationError('Missing required --workspace-id');
   }
   if (!authMode) {
-    throw new McpValidationError('Missing required --auth (credentials|token)');
+    throw new McpValidationError(
+      'Missing required --auth (credentials|client-credentials|token)'
+    );
   }
 
   const sharedSpace = Number(sharedSpaceRaw);
@@ -123,8 +127,30 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
     };
   }
 
+  if (authMode === 'client-credentials') {
+    const clientId = args['client-id'];
+    const clientSecret = args['client-secret'];
+    if (!clientId || !clientSecret) {
+      throw new McpValidationError(
+        'For --auth client-credentials, provide both --client-id and --client-secret'
+      );
+    }
+
+    return {
+      showHelp: false,
+      startupConnection: {
+        sessionId,
+        server,
+        sharedSpace,
+        workspace,
+        user: clientId,
+        password: clientSecret,
+      },
+    };
+  }
+
   throw new McpValidationError(
-    '--auth must be either "credentials" or "token"'
+    '--auth must be one of "credentials", "client-credentials", or "token"'
   );
 }
 
@@ -136,11 +162,15 @@ export function getCliHelpText(): string {
     '  --server-url <url>            Server URL (for example https://octane.example.com)',
     '  --shared-space-id <number>    Shared space ID',
     '  --workspace-id <number>       Workspace ID',
-    '  --auth <credentials|token>    Authentication mode',
+    '  --auth <credentials|client-credentials|token>  Authentication mode',
     '',
     'Credentials mode:',
     '  --username <value>            Octane username',
     '  --password <value>            Octane password',
+    '',
+    'Client credentials mode:',
+    '  --client-id <value>           API access client id',
+    '  --client-secret <value>       API access client secret',
     '',
     'Token mode:',
     '  --bearer-token <value>        Octane bearer token',

@@ -37,7 +37,10 @@ describe('mcp startup configuration', () => {
   it('returns help payload', () => {
     const startup = createStartupConfiguration(['--help']);
     assert.strictEqual(startup.showHelp, true);
-    assert.ok(startup.helpText && startup.helpText.includes('--auth <credentials|token>'));
+    assert.ok(
+      startup.helpText &&
+        startup.helpText.includes('--auth <credentials|client-credentials|token>')
+    );
   });
 
   it('preconnects default session from cli args', () => {
@@ -61,5 +64,29 @@ describe('mcp startup configuration', () => {
     assert.strictEqual(startup.showHelp, false);
     assert.strictEqual(store.getDescriptor('default').server, 'https://octane.example.com');
     assert.strictEqual(store.getDescriptor('default').authMode, 'token');
+  });
+
+  it('preconnects session from client-credentials args', () => {
+    const store = new OctaneSessionStore((_params: Params) => new StubClient());
+    const startup = createStartupConfiguration(
+      [
+        '--server-url',
+        'https://octane.example.com',
+        '--shared-space-id',
+        '1001',
+        '--workspace-id',
+        '1002',
+        '--auth',
+        'client-credentials',
+        '--client-id',
+        'cid',
+        '--client-secret',
+        'csecret',
+      ],
+      store
+    );
+
+    assert.strictEqual(startup.showHelp, false);
+    assert.strictEqual(store.getDescriptor('default').authMode, 'credentials');
   });
 });

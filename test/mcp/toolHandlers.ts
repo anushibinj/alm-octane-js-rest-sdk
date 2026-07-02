@@ -62,28 +62,6 @@ describe('mcp tool handlers', () => {
       token: 'abc',
     });
 
-    it('reuses preconfigured default session when connect arguments are omitted', async () => {
-      const client = new FakeOctaneClient();
-      const store = new OctaneSessionStore(() => client);
-      const handlers = new McpToolHandlers(store);
-
-      await handlers.runTool('connect', {
-        sessionId: 'default',
-        server: 'https://example',
-        sharedSpace: 1001,
-        workspace: 1002,
-        token: 'abc',
-      });
-
-      const result = await handlers.runTool('connect', undefined);
-      const payload = textResult(result as { content: Array<{ text: string }> }) as {
-        connected: boolean;
-        reused: boolean;
-      };
-      assert.strictEqual(payload.connected, true);
-      assert.strictEqual(payload.reused, true);
-    });
-
     const result = await handlers.runTool('connect', {});
     const payload = textResult(result as { content: Array<{ text: string }> }) as {
       connected: boolean;
@@ -93,6 +71,50 @@ describe('mcp tool handlers', () => {
     assert.strictEqual(payload.connected, true);
     assert.strictEqual(payload.reused, true);
     assert.strictEqual(payload.session.sessionId, 'default');
+  });
+
+  it('reuses preconfigured default session when connect arguments are omitted', async () => {
+    const client = new FakeOctaneClient();
+    const store = new OctaneSessionStore(() => client);
+    const handlers = new McpToolHandlers(store);
+
+    await handlers.runTool('connect', {
+      sessionId: 'default',
+      server: 'https://example',
+      sharedSpace: 1001,
+      workspace: 1002,
+      token: 'abc',
+    });
+
+    const result = await handlers.runTool('connect', undefined);
+    const payload = textResult(result as { content: Array<{ text: string }> }) as {
+      connected: boolean;
+      reused: boolean;
+    };
+    assert.strictEqual(payload.connected, true);
+    assert.strictEqual(payload.reused, true);
+  });
+
+  it('connects using clientId/clientSecret', async () => {
+    const client = new FakeOctaneClient();
+    const store = new OctaneSessionStore(() => client);
+    const handlers = new McpToolHandlers(store);
+
+    const result = await handlers.runTool('connect', {
+      sessionId: 'ci',
+      server: 'https://example',
+      sharedSpace: 1001,
+      workspace: 1002,
+      clientId: 'cid',
+      clientSecret: 'csecret',
+    });
+
+    const payload = textResult(result as { content: Array<{ text: string }> }) as {
+      connected: boolean;
+      session: { authMode: string };
+    };
+    assert.strictEqual(payload.connected, true);
+    assert.strictEqual(payload.session.authMode, 'credentials');
   });
 
   it('connects and returns session status', async () => {
@@ -169,25 +191,6 @@ describe('mcp tool handlers', () => {
       workspace: 1002,
       token: 'abc',
     });
-
-    it('uses default session when sessionId is omitted', async () => {
-      const client = new FakeOctaneClient();
-      const store = new OctaneSessionStore(() => client);
-      const handlers = new McpToolHandlers(store);
-
-      await handlers.runTool('connect', {
-        server: 'https://example',
-        sharedSpace: 1001,
-        workspace: 1002,
-        token: 'abc',
-      });
-      await handlers.runTool('octane_get', {
-        entityName: 'defects',
-        options: { at: 42 },
-      });
-
-      assert.deepStrictEqual(client.calls, ['at:42', 'get:defects', 'execute']);
-    });
     await handlers.runTool('octane_get', {
       sessionId: 's1',
       entityName: 'defects',
@@ -207,6 +210,25 @@ describe('mcp tool handlers', () => {
       'get:defects',
       'execute',
     ]);
+  });
+
+  it('uses default session when sessionId is omitted', async () => {
+    const client = new FakeOctaneClient();
+    const store = new OctaneSessionStore(() => client);
+    const handlers = new McpToolHandlers(store);
+
+    await handlers.runTool('connect', {
+      server: 'https://example',
+      sharedSpace: 1001,
+      workspace: 1002,
+      token: 'abc',
+    });
+    await handlers.runTool('octane_get', {
+      entityName: 'defects',
+      options: { at: 42 },
+    });
+
+    assert.deepStrictEqual(client.calls, ['at:42', 'get:defects', 'execute']);
   });
 
   it('returns base64 for attachment content', async () => {
