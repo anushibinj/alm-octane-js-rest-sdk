@@ -432,24 +432,6 @@ export class McpToolHandlers {
         },
       },
       {
-        name: 'list_sessions',
-        description: 'List active Octane sessions',
-        inputSchema: {
-          type: 'object',
-          properties: {},
-          required: [],
-        },
-      },
-      {
-        name: 'session_status',
-        description: 'Return active session details',
-        inputSchema: {
-          type: 'object',
-          properties: withSessionId,
-          required: [],
-        },
-      },
-      {
         name: 'disconnect',
         description: 'Close an Octane session',
         inputSchema: {
