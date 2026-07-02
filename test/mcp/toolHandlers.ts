@@ -62,6 +62,28 @@ describe('mcp tool handlers', () => {
       token: 'abc',
     });
 
+    it('reuses preconfigured default session when connect arguments are omitted', async () => {
+      const client = new FakeOctaneClient();
+      const store = new OctaneSessionStore(() => client);
+      const handlers = new McpToolHandlers(store);
+
+      await handlers.runTool('connect', {
+        sessionId: 'default',
+        server: 'https://example',
+        sharedSpace: 1001,
+        workspace: 1002,
+        token: 'abc',
+      });
+
+      const result = await handlers.runTool('connect', undefined);
+      const payload = textResult(result as { content: Array<{ text: string }> }) as {
+        connected: boolean;
+        reused: boolean;
+      };
+      assert.strictEqual(payload.connected, true);
+      assert.strictEqual(payload.reused, true);
+    });
+
     const result = await handlers.runTool('connect', {});
     const payload = textResult(result as { content: Array<{ text: string }> }) as {
       connected: boolean;
@@ -92,6 +114,47 @@ describe('mcp tool handlers', () => {
     };
     assert.strictEqual(payload.connected, true);
     assert.strictEqual(payload.session.sessionId, 's1');
+  });
+
+  it('returns default session status when args are omitted', async () => {
+    const client = new FakeOctaneClient();
+    const store = new OctaneSessionStore(() => client);
+    const handlers = new McpToolHandlers(store);
+
+    await handlers.runTool('connect', {
+      server: 'https://example',
+      sharedSpace: 1001,
+      workspace: 1002,
+      token: 'abc',
+    });
+    const result = await handlers.runTool('session_status', undefined);
+    const payload = textResult(result as { content: Array<{ text: string }> }) as {
+      connected: boolean;
+      session: { sessionId: string };
+    };
+
+    assert.strictEqual(payload.connected, true);
+    assert.strictEqual(payload.session.sessionId, 'default');
+  });
+
+  it('lists active sessions', async () => {
+    const client = new FakeOctaneClient();
+    const store = new OctaneSessionStore(() => client);
+    const handlers = new McpToolHandlers(store);
+
+    await handlers.runTool('connect', {
+      sessionId: 'a',
+      server: 'https://example',
+      sharedSpace: 1001,
+      workspace: 1002,
+      token: 'abc',
+    });
+    const result = await handlers.runTool('list_sessions', {});
+    const payload = textResult(result as { content: Array<{ text: string }> }) as {
+      sessions: Array<{ sessionId: string }>;
+    };
+    assert.strictEqual(payload.sessions.length, 1);
+    assert.strictEqual(payload.sessions[0].sessionId, 'a');
   });
 
   it('executes get with query options', async () => {

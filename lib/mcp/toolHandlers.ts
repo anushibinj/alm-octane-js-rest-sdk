@@ -35,6 +35,13 @@ function ok(payload: unknown): McpToolResponse {
   };
 }
 
+function asArgsObject(input: unknown): Record<string, unknown> {
+  if (input === undefined) {
+    return {};
+  }
+  return asObject(input, 'arguments');
+}
+
 function parseSessionId(value: unknown): string {
   if (value === undefined) {
     return 'default';
@@ -101,7 +108,7 @@ function applyQueryOptions(client: OctaneClient, options?: QueryOptions): Octane
 }
 
 function parseConnectInput(input: unknown): ConnectInput {
-  const source = asObject(input, 'arguments');
+  const source = asArgsObject(input);
   const sessionId = parseSessionId(source.sessionId);
   const server = asOptionalString(source.server, 'arguments.server');
   const sharedSpace =
@@ -163,14 +170,14 @@ function parseConnectInput(input: unknown): ConnectInput {
 }
 
 function parseSessionStatusInput(input: unknown): SessionStatusInput {
-  const source = asObject(input, 'arguments');
+  const source = asArgsObject(input);
   return {
     sessionId: parseSessionId(source.sessionId),
   };
 }
 
 function parseDisconnectInput(input: unknown): DisconnectInput {
-  const source = asObject(input, 'arguments');
+  const source = asArgsObject(input);
   return {
     sessionId: parseSessionId(source.sessionId),
   };
@@ -335,6 +342,15 @@ export class McpToolHandlers {
         },
       },
       {
+        name: 'list_sessions',
+        description: 'List active Octane sessions',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          required: [],
+        },
+      },
+      {
         name: 'session_status',
         description: 'Return active session details',
         inputSchema: {
@@ -494,6 +510,8 @@ export class McpToolHandlers {
         return this.connect(input);
       case 'session_status':
         return this.sessionStatus(input);
+      case 'list_sessions':
+        return this.listSessions();
       case 'disconnect':
         return this.disconnect(input);
       case 'authenticate':
@@ -535,6 +553,10 @@ export class McpToolHandlers {
     const args = parseSessionStatusInput(input);
     const descriptor = this.sessionStore.getDescriptor(args.sessionId);
     return ok({ connected: true, session: descriptor });
+  }
+
+  private async listSessions(): Promise<McpToolResponse> {
+    return ok({ sessions: this.sessionStore.list() });
   }
 
   private async disconnect(input: unknown): Promise<McpToolResponse> {
