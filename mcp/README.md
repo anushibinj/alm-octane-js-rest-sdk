@@ -11,6 +11,35 @@ npm run mcp:start
 
 The server starts on stdio and can be connected by an MCP client.
 
+## Convenience startup arguments
+
+You can preconfigure a default session from CLI args so clients do not need an initial `connect` call:
+
+```bash
+node dist/mcp-server.js \
+  --server-url https://octane.example.com \
+  --shared-space-id 1001 \
+  --workspace-id 1002 \
+  --auth credentials \
+  --username my.user \
+  --password my.password
+```
+
+Or with bearer token:
+
+```bash
+node dist/mcp-server.js \
+  --server-url https://octane.example.com \
+  --shared-space-id 1001 \
+  --workspace-id 1002 \
+  --auth token \
+  --bearer-token my-token
+```
+
+Optional flag:
+
+- `--session-id <value>`: pre-created session id (defaults to `default`)
+
 ## MCP client configuration
 
 Example configuration:
