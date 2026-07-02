@@ -7,6 +7,8 @@
   "scripts": {
     "build": "tsc",
     "test": "npm run build && cd dist && mocha --recursive",
+    "test:mcp": "npm run build && cd dist && mocha test/mcp/**/*.js",
+    "mcp:start": "npm run build && node dist/mcp-server.js",
     "test-jenkins": "npm run build && cp octane.json dist/ && cd dist && set JUNIT_REPORT_PATH=report.xml && set NODE_ENV=test && mocha --recursive --colors --reporter mocha-jenkins-reporter"
   },
   "repository": {
@@ -42,6 +44,7 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.2",
     "async-mutex": "0.5.0",
     "axios": "1.18.0",
     "http-cookie-agent": "^8.0.0",
