@@ -96,7 +96,7 @@ Example configuration:
 - Session/auth: `connect`, `disconnect`, `authenticate`, `sign_out`
 - Data operations: `octane_get`, `octane_create`, `octane_update`, `octane_update_bulk`, `octane_delete`
 - Convenience: `octane_get_ticket_details` (infers relevant fields from requested detail text)
-- Query helper: `octane_generate_query_string` (infers `fields` + `query` from natural language, validates by default with a lightweight `limit=5` request, and retries alternate query candidates)
+- Query helper: `octane_generate_query_string` (infers `fields` + `query` from natural language, always validates via query execution with default `limit=5`, and retries alternate query candidates)
 - Query validator: `octane_validate_query_string` (executes an existing `fields=...&query=...` string with default `limit=5` and returns `valid: true|false` with details)
 - Attachments: `octane_get_attachment_content`, `octane_upload_attachment`
 - Generic passthrough: `octane_custom_request`

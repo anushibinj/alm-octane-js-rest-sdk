@@ -1082,25 +1082,29 @@ export class McpToolHandlers {
     let validationSucceeded = false;
     let validationError: unknown;
     let successfulCandidateIndex: number | undefined;
+    let executionResult: unknown;
 
-    if (args.validate) {
-      for (let i = 0; i < queryCandidates.length; i += 1) {
-        const candidate = queryCandidates[i];
-        try {
-          client.get(entityName).fields(...fields).query(candidate).limit(args.validationLimit);
-          await runClientCall(async () => client.execute());
-          chosenQuery = candidate;
-          validationSucceeded = true;
-          successfulCandidateIndex = i;
-          validationError = undefined;
-          break;
-        } catch (error: unknown) {
-          validationError = extractErrorDetails(error) ?? (error instanceof Error ? error.message : String(error));
-        }
+    for (let i = 0; i < queryCandidates.length; i += 1) {
+      const candidate = queryCandidates[i];
+      const validation = await this.validateParsedQuery({
+        sessionId: args.sessionId,
+        entityName,
+        fields,
+        query: candidate,
+        validationLimit: args.validationLimit,
+      });
+      if (validation.valid) {
+        chosenQuery = candidate;
+        validationSucceeded = true;
+        successfulCandidateIndex = i;
+        validationError = undefined;
+        executionResult = validation.executionResult;
+        break;
       }
-      if (!validationSucceeded && validationError) {
-        throw new McpToolExecutionError('Failed to validate inferred query', validationError);
-      }
+      validationError = validation.error;
+    }
+    if (!validationSucceeded && validationError) {
+      throw new McpToolExecutionError('Failed to validate inferred query', validationError);
     }
 
     return ok({
@@ -1109,20 +1113,56 @@ export class McpToolHandlers {
       query: chosenQuery,
       queryString: `fields=${fields.join(',')}&query=${chosenQuery}`,
       validation: {
-        attempted: args.validate,
-        succeeded: args.validate ? validationSucceeded : undefined,
-        validationLimit: args.validate ? args.validationLimit : undefined,
+        attempted: true,
+        requestedByCaller: args.validate,
+        succeeded: validationSucceeded,
+        validationLimit: args.validationLimit,
         candidateCount: queryCandidates.length,
         selectedCandidateIndex:
-          args.validate && successfulCandidateIndex !== undefined
-            ? successfulCandidateIndex
-            : undefined,
+          successfulCandidateIndex !== undefined ? successfulCandidateIndex : undefined,
       },
+      executionResult,
     });
   }
 
   private async validateQueryString(input: unknown): Promise<McpToolResponse> {
     const args = parseValidateQueryStringInput(input);
+    const validation = await this.validateParsedQuery({
+      sessionId: args.sessionId,
+      entityName: args.entityName,
+      fields: args.fields,
+      query: args.query,
+      validationLimit: args.validationLimit,
+    });
+    if (validation.valid) {
+      return ok({
+        valid: true,
+        entityName: args.entityName,
+        fields: args.fields,
+        query: args.query,
+        queryString: `fields=${args.fields.join(',')}&query=${args.query}`,
+        validationLimit: args.validationLimit,
+        executionResult: validation.executionResult,
+      });
+    }
+    return ok({
+      valid: false,
+      entityName: args.entityName,
+      fields: args.fields,
+      query: args.query,
+      queryString: `fields=${args.fields.join(',')}&query=${args.query}`,
+      validationLimit: args.validationLimit,
+      error: validation.error,
+    });
+  }
+
+  private async validateParsedQuery(args: {
+    sessionId: string;
+    entityName: string;
+    fields: string[];
+    query: string;
+    validationLimit: number;
+  }): Promise<{ valid: true; executionResult: unknown } | { valid: false; error: unknown }> {
     const client = this.sessionStore.getClient(args.sessionId);
     try {
       client
@@ -1131,28 +1171,12 @@ export class McpToolHandlers {
         .query(args.query)
         .limit(args.validationLimit);
       const result = await runClientCall(async () => client.execute());
-      return ok({
-        valid: true,
-        entityName: args.entityName,
-        fields: args.fields,
-        query: args.query,
-        queryString: `fields=${args.fields.join(',')}&query=${args.query}`,
-        validationLimit: args.validationLimit,
-        executionResult: result,
-      });
+      return { valid: true, executionResult: result };
     } catch (error: unknown) {
       const details =
         extractErrorDetails(error) ??
         (error instanceof Error ? error.message : String(error));
-      return ok({
-        valid: false,
-        entityName: args.entityName,
-        fields: args.fields,
-        query: args.query,
-        queryString: `fields=${args.fields.join(',')}&query=${args.query}`,
-        validationLimit: args.validationLimit,
-        error: details,
-      });
+      return { valid: false, error: details };
     }
   }
 }

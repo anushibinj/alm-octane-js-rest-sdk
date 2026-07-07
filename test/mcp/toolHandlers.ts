@@ -398,7 +398,12 @@ describe('mcp tool handlers', () => {
       fields: string[];
       query: string;
       queryString: string;
-      validation: { attempted: boolean; succeeded: boolean; validationLimit: number };
+      validation: {
+        attempted: boolean;
+        requestedByCaller: boolean;
+        succeeded: boolean;
+        validationLimit: number;
+      };
     };
     assert.strictEqual(payload.entityName, 'work_items');
     assert.deepStrictEqual(payload.fields, ['id', 'name', 'product']);
@@ -408,6 +413,7 @@ describe('mcp tool handlers', () => {
       'fields=id,name,product&query=product.name EQ ^*Case360*^'
     );
     assert.strictEqual(payload.validation.attempted, true);
+    assert.strictEqual(payload.validation.requestedByCaller, true);
     assert.strictEqual(payload.validation.succeeded, true);
     assert.strictEqual(payload.validation.validationLimit, 5);
     assert.deepStrictEqual(client.calls, [
@@ -421,6 +427,7 @@ describe('mcp tool handlers', () => {
 
   it('generates query string without validation when requested', async () => {
     const client = new FakeOctaneClient();
+    client.executeResult = { total_count: 0, data: [] };
     const store = new OctaneSessionStore(() => client);
     const handlers = new McpToolHandlers(store);
 
@@ -438,14 +445,22 @@ describe('mcp tool handlers', () => {
     });
     const payload = textResult(result as { content: Array<{ text: string }> }) as {
       query: string;
-      validation: { attempted: boolean };
+      validation: { attempted: boolean; requestedByCaller: boolean; succeeded: boolean };
     };
     assert.strictEqual(
       payload.query,
       'owner EQ {null};product.name EQ ^*Case360*^'
     );
-    assert.strictEqual(payload.validation.attempted, false);
-    assert.deepStrictEqual(client.calls, []);
+    assert.strictEqual(payload.validation.attempted, true);
+    assert.strictEqual(payload.validation.requestedByCaller, false);
+    assert.strictEqual(payload.validation.succeeded, true);
+    assert.deepStrictEqual(client.calls, [
+      'get:work_items',
+      'fields:id,name,owner,product',
+      'query:owner EQ {null};product.name EQ ^*Case360*^',
+      'limit:5',
+      'execute',
+    ]);
   });
 
   it('infers owner and phase filters instead of a name fallback', async () => {
