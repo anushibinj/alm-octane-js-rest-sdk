@@ -379,6 +379,100 @@ function inferTicketFields(
   return Array.from(fields);
 }
 
+function parseGenerateQueryStringInput(input: unknown): {
+  sessionId: string;
+  text: string;
+  entityName?: string;
+  validate: boolean;
+} {
+  const source = asObject(input, 'arguments');
+  const text = asString(source.text, 'arguments.text');
+  const entityName =
+    source.entityName === undefined
+      ? undefined
+      : asString(source.entityName, 'arguments.entityName');
+  const validate =
+    source.validate === undefined
+      ? true
+      : (() => {
+          if (typeof source.validate !== 'boolean') {
+            throw new McpValidationError('arguments.validate must be a boolean');
+          }
+          return source.validate;
+        })();
+
+  return {
+    sessionId: parseSessionId(source.sessionId),
+    text,
+    entityName,
+    validate,
+  };
+}
+
+function inferEntityFromText(text: string, override?: string): string {
+  if (override) {
+    return override;
+  }
+  const normalized = text.toLowerCase();
+  if (normalized.includes('defect')) {
+    return 'defects';
+  }
+  if (normalized.includes('story') || normalized.includes('ticket') || normalized.includes('work item')) {
+    return 'work_items';
+  }
+  return 'work_items';
+}
+
+function inferFieldsFromText(text: string): string[] {
+  const normalized = text.toLowerCase();
+  const fields = new Set<string>(['id', 'name']);
+  if (normalized.includes('description') || normalized.includes('detail')) {
+    fields.add('description');
+  }
+  if (normalized.includes('owner') || normalized.includes('assignee') || normalized.includes('unassigned')) {
+    fields.add('owner');
+  }
+  if (normalized.includes('status') || normalized.includes('phase')) {
+    fields.add('phase');
+  }
+  if (normalized.includes('priority')) {
+    fields.add('priority');
+  }
+  if (normalized.includes('severity')) {
+    fields.add('severity');
+  }
+  return Array.from(fields);
+}
+
+function inferQueryCandidates(text: string): string[] {
+  const normalized = text.toLowerCase();
+  const clauses: string[] = [];
+  const productMatch =
+    text.match(/product\s*(?:\([^)]*\)\s*[-=:]?\s*)?["']?([A-Za-z0-9_. -]+)["']?/i) ??
+    text.match(/for\s+["']?([A-Za-z0-9_. -]+)["']?/i);
+  const productName = productMatch ? productMatch[1].trim() : undefined;
+
+  if (normalized.includes('unassigned')) {
+    clauses.push('owner EQ {null}');
+  }
+  if (productName) {
+    clauses.push(`name EQ ^*${productName}*^`);
+  }
+  if (clauses.length === 0) {
+    return ['id GT 0'];
+  }
+  const strict = clauses.join(';');
+  const looser = clauses.filter((clause) => !clause.startsWith('name EQ')).join(';');
+  const candidates = [strict];
+  if (looser && looser !== strict) {
+    candidates.push(looser);
+  }
+  if (productName) {
+    candidates.push(`name EQ ^*${productName}*^`);
+  }
+  return candidates;
+}
+
 export class McpToolHandlers {
   private readonly sessionStore: OctaneSessionStore;
 
@@ -586,6 +680,21 @@ export class McpToolHandlers {
         },
       },
       {
+        name: 'octane_generate_query_string',
+        description:
+          'Generate fields/query string from natural language and validate by running a lightweight query',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            ...withSessionId,
+            text: { type: 'string' },
+            entityName: { type: 'string' },
+            validate: { type: 'boolean' },
+          },
+          required: ['text'],
+        },
+      },
+      {
         name: 'octane_custom_request',
         description: 'Execute a custom Octane request directly',
         inputSchema: {
@@ -637,6 +746,8 @@ export class McpToolHandlers {
         return this.customRequest(input);
       case 'octane_get_ticket_details':
         return this.getTicketDetails(input);
+      case 'octane_generate_query_string':
+        return this.generateQueryString(input);
       default:
         throw new McpValidationError(`Unknown tool "${name}"`);
     }
@@ -783,6 +894,47 @@ export class McpToolHandlers {
       ticketId: args.ticketId,
       selectedFields,
       details: response,
+    });
+  }
+
+  private async generateQueryString(input: unknown): Promise<McpToolResponse> {
+    const args = parseGenerateQueryStringInput(input);
+    const client = this.sessionStore.getClient(args.sessionId);
+    const entityName = inferEntityFromText(args.text, args.entityName);
+    const fields = inferFieldsFromText(args.text);
+    const queryCandidates = inferQueryCandidates(args.text);
+
+    let chosenQuery = queryCandidates[0];
+    let validationSucceeded = false;
+    let validationError: unknown;
+
+    if (args.validate) {
+      for (const candidate of queryCandidates) {
+        try {
+          client.get(entityName).fields(...fields).query(candidate).limit(1);
+          await runClientCall(async () => client.execute());
+          chosenQuery = candidate;
+          validationSucceeded = true;
+          validationError = undefined;
+          break;
+        } catch (error: unknown) {
+          validationError = extractErrorDetails(error) ?? (error instanceof Error ? error.message : String(error));
+        }
+      }
+      if (!validationSucceeded && validationError) {
+        throw new McpToolExecutionError('Failed to validate inferred query', validationError);
+      }
+    }
+
+    return ok({
+      entityName,
+      fields,
+      query: chosenQuery,
+      queryString: `fields=${fields.join(',')}&query=${chosenQuery}`,
+      validation: {
+        attempted: args.validate,
+        succeeded: args.validate ? validationSucceeded : undefined,
+      },
     });
   }
 }

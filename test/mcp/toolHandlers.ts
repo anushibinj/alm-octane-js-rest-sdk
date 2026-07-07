@@ -367,4 +367,76 @@ describe('mcp tool handlers', () => {
       ['get:work_items', 'at:5519852', 'fields:phase,owner', 'execute']
     );
   });
+
+  it('generates query string from natural language and validates it', async () => {
+    const client = new FakeOctaneClient();
+    client.executeResult = { total_count: 1, data: [] };
+    const store = new OctaneSessionStore(() => client);
+    const handlers = new McpToolHandlers(store);
+
+    await handlers.runTool('connect', {
+      sessionId: 's1',
+      server: 'https://example',
+      sharedSpace: 1001,
+      workspace: 1002,
+      token: 'abc',
+    });
+    const result = await handlers.runTool('octane_generate_query_string', {
+      sessionId: 's1',
+      text: 'Give me a query string for finding all tickets in product Case360',
+    });
+
+    const payload = textResult(result as { content: Array<{ text: string }> }) as {
+      entityName: string;
+      fields: string[];
+      query: string;
+      queryString: string;
+      validation: { attempted: boolean; succeeded: boolean };
+    };
+    assert.strictEqual(payload.entityName, 'work_items');
+    assert.deepStrictEqual(payload.fields, ['id', 'name']);
+    assert.strictEqual(payload.query, 'name EQ ^*Case360*^');
+    assert.strictEqual(
+      payload.queryString,
+      'fields=id,name&query=name EQ ^*Case360*^'
+    );
+    assert.strictEqual(payload.validation.attempted, true);
+    assert.strictEqual(payload.validation.succeeded, true);
+    assert.deepStrictEqual(client.calls, [
+      'get:work_items',
+      'fields:id,name',
+      'query:name EQ ^*Case360*^',
+      'limit:1',
+      'execute',
+    ]);
+  });
+
+  it('generates query string without validation when requested', async () => {
+    const client = new FakeOctaneClient();
+    const store = new OctaneSessionStore(() => client);
+    const handlers = new McpToolHandlers(store);
+
+    await handlers.runTool('connect', {
+      sessionId: 's1',
+      server: 'https://example',
+      sharedSpace: 1001,
+      workspace: 1002,
+      token: 'abc',
+    });
+    const result = await handlers.runTool('octane_generate_query_string', {
+      sessionId: 's1',
+      text: 'find unassigned tickets for product Case360',
+      validate: false,
+    });
+    const payload = textResult(result as { content: Array<{ text: string }> }) as {
+      query: string;
+      validation: { attempted: boolean };
+    };
+    assert.strictEqual(
+      payload.query,
+      'owner EQ {null};name EQ ^*Case360*^'
+    );
+    assert.strictEqual(payload.validation.attempted, false);
+    assert.deepStrictEqual(client.calls, []);
+  });
 });
