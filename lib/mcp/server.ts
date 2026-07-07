@@ -36,7 +36,8 @@ export function createMcpServer(handlers?: McpToolHandlers): Server {
     'Do not end the turn after planning text. Always execute the needed tool call first. ' +
     'If startup auth was configured, use default session without asking for credentials. ' +
     'Use at most one session check (session_status or list_sessions), then proceed to the actual request. ' +
-    'For ticket questions, prefer octane_get_ticket_details.';
+    'For ticket questions, prefer octane_get_ticket_details. ' +
+    'For natural-language query-string requests, always call octane_generate_query_string instead of composing a query in plain text.';
   const server = new Server(
     {
       name: 'alm-octane-mcp-server',

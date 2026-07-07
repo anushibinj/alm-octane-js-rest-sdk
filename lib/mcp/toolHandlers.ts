@@ -384,6 +384,7 @@ function parseGenerateQueryStringInput(input: unknown): {
   text: string;
   entityName?: string;
   validate: boolean;
+  validationLimit: number;
 } {
   const source = asObject(input, 'arguments');
   const text = asString(source.text, 'arguments.text');
@@ -400,12 +401,55 @@ function parseGenerateQueryStringInput(input: unknown): {
           }
           return source.validate;
         })();
+  const validationLimit =
+    source.validationLimit === undefined
+      ? 5
+      : asNumber(source.validationLimit, 'arguments.validationLimit');
+  if (validationLimit <= 0) {
+    throw new McpValidationError('arguments.validationLimit must be > 0');
+  }
 
   return {
     sessionId: parseSessionId(source.sessionId),
     text,
     entityName,
     validate,
+    validationLimit,
+  };
+}
+
+interface InferredQueryIntent {
+  owner?: string;
+  phase?: string;
+  product?: string;
+  unassigned: boolean;
+}
+
+function normalizePhrase(value: string): string {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+function escapeContainsValue(value: string): string {
+  return value.replace(/\^/g, '');
+}
+
+function extractQueryIntent(text: string): InferredQueryIntent {
+  const normalized = text.toLowerCase();
+  const productMatch = text.match(
+    /product(?:\s+name)?\s*(?:is|=|:)?\s*["']?([A-Za-z0-9_. -]+?)(?=$|,| and | with | where )/i
+  );
+  const ownerMatch = text.match(
+    /(?:owner|assignee|assigned to|user)\s*(?:is|=|:)?\s*["']?([A-Za-z0-9_.-]+)["']?/i
+  );
+  const phaseMatch = text.match(
+    /(?:phase|status)\s*(?:is|=|:)?\s*["']?([A-Za-z0-9_. -]+?)(?=$|,| and | with | where )/i
+  );
+
+  return {
+    unassigned: normalized.includes('unassigned'),
+    product: productMatch ? normalizePhrase(productMatch[1]) : undefined,
+    owner: ownerMatch ? normalizePhrase(ownerMatch[1]) : undefined,
+    phase: phaseMatch ? normalizePhrase(phaseMatch[1]) : undefined,
   };
 }
 
@@ -423,17 +467,25 @@ function inferEntityFromText(text: string, override?: string): string {
   return 'work_items';
 }
 
-function inferFieldsFromText(text: string): string[] {
+function inferFieldsFromText(text: string, intent: InferredQueryIntent): string[] {
   const normalized = text.toLowerCase();
   const fields = new Set<string>(['id', 'name']);
   if (normalized.includes('description') || normalized.includes('detail')) {
     fields.add('description');
   }
-  if (normalized.includes('owner') || normalized.includes('assignee') || normalized.includes('unassigned')) {
+  if (
+    normalized.includes('owner') ||
+    normalized.includes('assignee') ||
+    normalized.includes('unassigned') ||
+    intent.owner
+  ) {
     fields.add('owner');
   }
-  if (normalized.includes('status') || normalized.includes('phase')) {
+  if (normalized.includes('status') || normalized.includes('phase') || intent.phase) {
     fields.add('phase');
+  }
+  if (intent.product) {
+    fields.add('product');
   }
   if (normalized.includes('priority')) {
     fields.add('priority');
@@ -444,33 +496,55 @@ function inferFieldsFromText(text: string): string[] {
   return Array.from(fields);
 }
 
-function inferQueryCandidates(text: string): string[] {
-  const normalized = text.toLowerCase();
-  const clauses: string[] = [];
-  const productMatch =
-    text.match(/product\s*(?:\([^)]*\)\s*[-=:]?\s*)?["']?([A-Za-z0-9_. -]+)["']?/i) ??
-    text.match(/for\s+["']?([A-Za-z0-9_. -]+)["']?/i);
-  const productName = productMatch ? productMatch[1].trim() : undefined;
+function inferQueryCandidates(intent: InferredQueryIntent): string[] {
+  const ownerVariants: string[] = [];
+  const phaseVariants: string[] = [];
+  const productVariants: string[] = [];
 
-  if (normalized.includes('unassigned')) {
-    clauses.push('owner EQ {null}');
+  if (intent.unassigned) {
+    ownerVariants.push('owner EQ {null}');
+  } else if (intent.owner) {
+    const value = escapeContainsValue(intent.owner);
+    ownerVariants.push(`owner.name EQ ^*${value}*^`);
+    ownerVariants.push(`owner EQ ^*${value}*^`);
   }
-  if (productName) {
-    clauses.push(`name EQ ^*${productName}*^`);
+  if (intent.phase) {
+    const value = escapeContainsValue(intent.phase);
+    phaseVariants.push(`phase.name EQ ^*${value}*^`);
+    phaseVariants.push(`phase EQ ^*${value}*^`);
   }
-  if (clauses.length === 0) {
-    return ['id GT 0'];
+  if (intent.product) {
+    const value = escapeContainsValue(intent.product);
+    productVariants.push(`product.name EQ ^*${value}*^`);
+    productVariants.push(`product EQ ^*${value}*^`);
+    productVariants.push(`name EQ ^*${value}*^`);
   }
-  const strict = clauses.join(';');
-  const looser = clauses.filter((clause) => !clause.startsWith('name EQ')).join(';');
-  const candidates = [strict];
-  if (looser && looser !== strict) {
-    candidates.push(looser);
+
+  const dimensions = [
+    ownerVariants.length > 0 ? ownerVariants : [''],
+    phaseVariants.length > 0 ? phaseVariants : [''],
+    productVariants.length > 0 ? productVariants : [''],
+  ];
+  const generated = new Set<string>();
+  const maxCandidates = 8;
+
+  for (const ownerClause of dimensions[0]) {
+    for (const phaseClause of dimensions[1]) {
+      for (const productClause of dimensions[2]) {
+        const clauses = [ownerClause, phaseClause, productClause].filter(Boolean);
+        if (clauses.length === 0) {
+          generated.add('id GT 0');
+        } else {
+          generated.add(clauses.join(';'));
+        }
+        if (generated.size >= maxCandidates) {
+          return Array.from(generated);
+        }
+      }
+    }
   }
-  if (productName) {
-    candidates.push(`name EQ ^*${productName}*^`);
-  }
-  return candidates;
+
+  return Array.from(generated);
 }
 
 export class McpToolHandlers {
@@ -690,6 +764,7 @@ export class McpToolHandlers {
             text: { type: 'string' },
             entityName: { type: 'string' },
             validate: { type: 'boolean' },
+            validationLimit: { type: 'number' },
           },
           required: ['text'],
         },
@@ -901,20 +976,24 @@ export class McpToolHandlers {
     const args = parseGenerateQueryStringInput(input);
     const client = this.sessionStore.getClient(args.sessionId);
     const entityName = inferEntityFromText(args.text, args.entityName);
-    const fields = inferFieldsFromText(args.text);
-    const queryCandidates = inferQueryCandidates(args.text);
+    const intent = extractQueryIntent(args.text);
+    const fields = inferFieldsFromText(args.text, intent);
+    const queryCandidates = inferQueryCandidates(intent);
 
     let chosenQuery = queryCandidates[0];
     let validationSucceeded = false;
     let validationError: unknown;
+    let successfulCandidateIndex: number | undefined;
 
     if (args.validate) {
-      for (const candidate of queryCandidates) {
+      for (let i = 0; i < queryCandidates.length; i += 1) {
+        const candidate = queryCandidates[i];
         try {
-          client.get(entityName).fields(...fields).query(candidate).limit(1);
+          client.get(entityName).fields(...fields).query(candidate).limit(args.validationLimit);
           await runClientCall(async () => client.execute());
           chosenQuery = candidate;
           validationSucceeded = true;
+          successfulCandidateIndex = i;
           validationError = undefined;
           break;
         } catch (error: unknown) {
@@ -934,6 +1013,12 @@ export class McpToolHandlers {
       validation: {
         attempted: args.validate,
         succeeded: args.validate ? validationSucceeded : undefined,
+        validationLimit: args.validate ? args.validationLimit : undefined,
+        candidateCount: queryCandidates.length,
+        selectedCandidateIndex:
+          args.validate && successfulCandidateIndex !== undefined
+            ? successfulCandidateIndex
+            : undefined,
       },
     });
   }

@@ -391,22 +391,23 @@ describe('mcp tool handlers', () => {
       fields: string[];
       query: string;
       queryString: string;
-      validation: { attempted: boolean; succeeded: boolean };
+      validation: { attempted: boolean; succeeded: boolean; validationLimit: number };
     };
     assert.strictEqual(payload.entityName, 'work_items');
-    assert.deepStrictEqual(payload.fields, ['id', 'name']);
-    assert.strictEqual(payload.query, 'name EQ ^*Case360*^');
+    assert.deepStrictEqual(payload.fields, ['id', 'name', 'product']);
+    assert.strictEqual(payload.query, 'product.name EQ ^*Case360*^');
     assert.strictEqual(
       payload.queryString,
-      'fields=id,name&query=name EQ ^*Case360*^'
+      'fields=id,name,product&query=product.name EQ ^*Case360*^'
     );
     assert.strictEqual(payload.validation.attempted, true);
     assert.strictEqual(payload.validation.succeeded, true);
+    assert.strictEqual(payload.validation.validationLimit, 5);
     assert.deepStrictEqual(client.calls, [
       'get:work_items',
-      'fields:id,name',
-      'query:name EQ ^*Case360*^',
-      'limit:1',
+      'fields:id,name,product',
+      'query:product.name EQ ^*Case360*^',
+      'limit:5',
       'execute',
     ]);
   });
@@ -434,9 +435,38 @@ describe('mcp tool handlers', () => {
     };
     assert.strictEqual(
       payload.query,
-      'owner EQ {null};name EQ ^*Case360*^'
+      'owner EQ {null};product.name EQ ^*Case360*^'
     );
     assert.strictEqual(payload.validation.attempted, false);
     assert.deepStrictEqual(client.calls, []);
+  });
+
+  it('infers owner and phase filters instead of a name fallback', async () => {
+    const client = new FakeOctaneClient();
+    const store = new OctaneSessionStore(() => client);
+    const handlers = new McpToolHandlers(store);
+
+    await handlers.runTool('connect', {
+      sessionId: 's1',
+      server: 'https://example',
+      sharedSpace: 1001,
+      workspace: 1002,
+      token: 'abc',
+    });
+    const result = await handlers.runTool('octane_generate_query_string', {
+      sessionId: 's1',
+      text: 'find tickets with phase code review and assigned to ajosephr',
+      validate: false,
+    });
+
+    const payload = textResult(result as { content: Array<{ text: string }> }) as {
+      fields: string[];
+      query: string;
+    };
+    assert.deepStrictEqual(payload.fields, ['id', 'name', 'owner', 'phase']);
+    assert.strictEqual(
+      payload.query,
+      'owner.name EQ ^*ajosephr*^;phase.name EQ ^*code review*^'
+    );
   });
 });
