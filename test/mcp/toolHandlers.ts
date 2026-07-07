@@ -8,6 +8,7 @@ import { OctaneClient } from '../../lib/mcp/types';
 class FakeOctaneClient implements OctaneClient {
   calls: string[];
   executeResult: unknown;
+  executeError?: Error;
   constructor() {
     this.calls = [];
     this.executeResult = { ok: true };
@@ -41,7 +42,13 @@ class FakeOctaneClient implements OctaneClient {
     this.calls.push(`executeCustomRequest:${operation}:${customUrl}`);
     return { custom: true };
   }
-  async execute(): Promise<unknown> { this.calls.push('execute'); return this.executeResult; }
+  async execute(): Promise<unknown> {
+    this.calls.push('execute');
+    if (this.executeError) {
+      throw this.executeError;
+    }
+    return this.executeResult;
+  }
 }
 
 function textResult(result: { content: Array<{ text: string }> }): unknown {
@@ -468,5 +475,74 @@ describe('mcp tool handlers', () => {
       payload.query,
       'owner.name EQ ^*ajosephr*^;phase.name EQ ^*code review*^'
     );
+  });
+
+  it('validates an existing query string with default limit 5', async () => {
+    const client = new FakeOctaneClient();
+    client.executeResult = { total_count: 2, data: [{ id: 1 }, { id: 2 }] };
+    const store = new OctaneSessionStore(() => client);
+    const handlers = new McpToolHandlers(store);
+
+    await handlers.runTool('connect', {
+      sessionId: 's1',
+      server: 'https://example',
+      sharedSpace: 1001,
+      workspace: 1002,
+      token: 'abc',
+    });
+
+    const result = await handlers.runTool('octane_validate_query_string', {
+      sessionId: 's1',
+      entityName: 'work_items',
+      queryString:
+        'fields=id,name,phase&query=phase.name%20EQ%20%5E*code%20review*%5E',
+    });
+    const payload = textResult(result as { content: Array<{ text: string }> }) as {
+      valid: boolean;
+      fields: string[];
+      query: string;
+      validationLimit: number;
+    };
+
+    assert.strictEqual(payload.valid, true);
+    assert.deepStrictEqual(payload.fields, ['id', 'name', 'phase']);
+    assert.strictEqual(payload.query, 'phase.name EQ ^*code review*^');
+    assert.strictEqual(payload.validationLimit, 5);
+    assert.deepStrictEqual(client.calls, [
+      'get:work_items',
+      'fields:id,name,phase',
+      'query:phase.name EQ ^*code review*^',
+      'limit:5',
+      'execute',
+    ]);
+  });
+
+  it('returns valid=false when query validation fails', async () => {
+    const client = new FakeOctaneClient();
+    client.executeError = new Error('bad query');
+    const store = new OctaneSessionStore(() => client);
+    const handlers = new McpToolHandlers(store);
+
+    await handlers.runTool('connect', {
+      sessionId: 's1',
+      server: 'https://example',
+      sharedSpace: 1001,
+      workspace: 1002,
+      token: 'abc',
+    });
+
+    const result = await handlers.runTool('octane_validate_query_string', {
+      sessionId: 's1',
+      queryString: 'fields=id,name&query=bad query',
+    });
+    const payload = textResult(result as { content: Array<{ text: string }> }) as {
+      valid: boolean;
+      error: string;
+      entityName: string;
+    };
+
+    assert.strictEqual(payload.valid, false);
+    assert.strictEqual(payload.entityName, 'work_items');
+    assert.ok(payload.error.includes('bad query'));
   });
 });

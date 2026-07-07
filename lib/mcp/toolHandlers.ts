@@ -418,6 +418,85 @@ function parseGenerateQueryStringInput(input: unknown): {
   };
 }
 
+function parseQueryStringParts(queryString: string): {
+  fields?: string[];
+  query?: string;
+} {
+  const trimmed = queryString.trim().replace(/^\?/, '');
+  if (trimmed.length === 0) {
+    return {};
+  }
+
+  const parts = trimmed.split('&');
+  let fields: string[] | undefined;
+  let query: string | undefined;
+
+  for (const part of parts) {
+    if (!part) {
+      continue;
+    }
+    const idx = part.indexOf('=');
+    const rawKey = idx >= 0 ? part.substring(0, idx) : part;
+    const rawValue = idx >= 0 ? part.substring(idx + 1) : '';
+    const key = decodeURIComponent(rawKey);
+    const value = decodeURIComponent(rawValue);
+    if (key === 'fields') {
+      fields = value
+        .split(',')
+        .map((field) => field.trim())
+        .filter((field) => field.length > 0);
+    } else if (key === 'query') {
+      query = value.trim();
+    }
+  }
+
+  return { fields, query };
+}
+
+function parseValidateQueryStringInput(input: unknown): {
+  sessionId: string;
+  entityName: string;
+  queryString: string;
+  query: string;
+  fields: string[];
+  validationLimit: number;
+} {
+  const source = asObject(input, 'arguments');
+  const queryString = asString(source.queryString, 'arguments.queryString');
+  const explicitQuery =
+    source.query === undefined ? undefined : asString(source.query, 'arguments.query');
+  const explicitFields = parseFieldNames(source.fields, 'arguments.fields');
+  const entityName =
+    source.entityName === undefined
+      ? 'work_items'
+      : asString(source.entityName, 'arguments.entityName');
+  const validationLimit =
+    source.validationLimit === undefined
+      ? 5
+      : asNumber(source.validationLimit, 'arguments.validationLimit');
+  if (validationLimit <= 0) {
+    throw new McpValidationError('arguments.validationLimit must be > 0');
+  }
+
+  const parsed = parseQueryStringParts(queryString);
+  const query = explicitQuery ?? parsed.query;
+  if (!query || query.length === 0) {
+    throw new McpValidationError(
+      'Unable to find query. Provide arguments.query or include query=... in arguments.queryString'
+    );
+  }
+  const fields = explicitFields ?? parsed.fields ?? ['id', 'name'];
+
+  return {
+    sessionId: parseSessionId(source.sessionId),
+    entityName,
+    queryString,
+    query,
+    fields,
+    validationLimit,
+  };
+}
+
 interface InferredQueryIntent {
   owner?: string;
   phase?: string;
@@ -770,6 +849,23 @@ export class McpToolHandlers {
         },
       },
       {
+        name: 'octane_validate_query_string',
+        description:
+          'Validate a query string by executing it with a small limit and returning structured validation details',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            ...withSessionId,
+            entityName: { type: 'string' },
+            queryString: { type: 'string' },
+            query: { type: 'string' },
+            fields: { type: 'array', items: { type: 'string' } },
+            validationLimit: { type: 'number' },
+          },
+          required: ['queryString'],
+        },
+      },
+      {
         name: 'octane_custom_request',
         description: 'Execute a custom Octane request directly',
         inputSchema: {
@@ -823,6 +919,8 @@ export class McpToolHandlers {
         return this.getTicketDetails(input);
       case 'octane_generate_query_string':
         return this.generateQueryString(input);
+      case 'octane_validate_query_string':
+        return this.validateQueryString(input);
       default:
         throw new McpValidationError(`Unknown tool "${name}"`);
     }
@@ -1021,6 +1119,41 @@ export class McpToolHandlers {
             : undefined,
       },
     });
+  }
+
+  private async validateQueryString(input: unknown): Promise<McpToolResponse> {
+    const args = parseValidateQueryStringInput(input);
+    const client = this.sessionStore.getClient(args.sessionId);
+    try {
+      client
+        .get(args.entityName)
+        .fields(...args.fields)
+        .query(args.query)
+        .limit(args.validationLimit);
+      const result = await runClientCall(async () => client.execute());
+      return ok({
+        valid: true,
+        entityName: args.entityName,
+        fields: args.fields,
+        query: args.query,
+        queryString: `fields=${args.fields.join(',')}&query=${args.query}`,
+        validationLimit: args.validationLimit,
+        executionResult: result,
+      });
+    } catch (error: unknown) {
+      const details =
+        extractErrorDetails(error) ??
+        (error instanceof Error ? error.message : String(error));
+      return ok({
+        valid: false,
+        entityName: args.entityName,
+        fields: args.fields,
+        query: args.query,
+        queryString: `fields=${args.fields.join(',')}&query=${args.query}`,
+        validationLimit: args.validationLimit,
+        error: details,
+      });
+    }
   }
 }
 
