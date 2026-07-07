@@ -42,4 +42,18 @@ describe('mcp validation', () => {
     assert.strictEqual(asString('  abc ', 'name'), 'abc');
     assert.deepStrictEqual(asStringArray(['a', 'b'], 'values'), ['a', 'b']);
   });
+
+  it('rejects invalid query syntax', () => {
+    assert.throws(
+      () => asQueryOptions({ query: 'owner.name == foo' }, 'options', true),
+      McpValidationError
+    );
+  });
+
+  it('rejects invalid field syntax', () => {
+    assert.throws(
+      () => asQueryOptions({ fields: ['name{'] }, 'options', true),
+      McpValidationError
+    );
+  });
 });

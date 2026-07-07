@@ -1,5 +1,9 @@
 import { McpValidationError } from './errors';
 import { QueryOptions } from './types';
+import {
+  validateFieldExpression,
+  validateOctaneQuerySyntax,
+} from './querySyntax';
 
 export function asObject(value: unknown, path: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -111,6 +115,24 @@ export function asQueryOptions(
   }
   if (offset !== undefined && offset < 0) {
     throw new McpValidationError(`${path}.offset must be >= 0`);
+  }
+  if (fields !== undefined) {
+    fields.forEach((fieldName, index) => {
+      const fieldValidation = validateFieldExpression(fieldName);
+      if (!fieldValidation.valid) {
+        throw new McpValidationError(
+          `${path}.fields[${index}] is invalid: ${fieldValidation.message}`
+        );
+      }
+    });
+  }
+  if (query !== undefined) {
+    const queryValidation = validateOctaneQuerySyntax(query);
+    if (!queryValidation.valid) {
+      throw new McpValidationError(
+        `${path}.query has invalid ValueEdge query syntax: ${queryValidation.message}`
+      );
+    }
   }
 
   return { at, limit, offset, fields, orderBy, query, script };

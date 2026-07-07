@@ -28,6 +28,13 @@ import {
   asOptionalStringArray,
   asNumber,
 } from './validation';
+import {
+  escapeOctaneStringValue,
+  parseFieldsClause,
+  validateFieldExpression,
+  validateOctaneQuerySyntax,
+  VALUEEDGE_QUERY_SYNTAX_SOURCES,
+} from './querySyntax';
 
 export interface McpToolResponse {
   content: Array<{ type: 'text'; text: string }>;
@@ -441,10 +448,14 @@ function parseQueryStringParts(queryString: string): {
     const key = decodeURIComponent(rawKey);
     const value = decodeURIComponent(rawValue);
     if (key === 'fields') {
-      fields = value
-        .split(',')
-        .map((field) => field.trim())
-        .filter((field) => field.length > 0);
+      try {
+        fields = parseFieldsClause(value);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new McpValidationError(
+          `arguments.queryString fields clause is invalid: ${message}`
+        );
+      }
     } else if (key === 'query') {
       query = value.trim();
     }
@@ -485,6 +496,12 @@ function parseValidateQueryStringInput(input: unknown): {
       'Unable to find query. Provide arguments.query or include query=... in arguments.queryString'
     );
   }
+  const queryValidation = validateOctaneQuerySyntax(query);
+  if (!queryValidation.valid) {
+    throw new McpValidationError(
+      `arguments.query has invalid ValueEdge query syntax: ${queryValidation.message}`
+    );
+  }
   const fields = explicitFields ?? parsed.fields ?? ['id', 'name'];
 
   return {
@@ -499,6 +516,8 @@ function parseValidateQueryStringInput(input: unknown): {
 
 interface InferredQueryIntent {
   owner?: string;
+  ownerId?: number;
+  currentUser: boolean;
   phase?: string;
   product?: string;
   unassigned: boolean;
@@ -506,10 +525,6 @@ interface InferredQueryIntent {
 
 function normalizePhrase(value: string): string {
   return value.trim().replace(/\s+/g, ' ');
-}
-
-function escapeContainsValue(value: string): string {
-  return value.replace(/\^/g, '');
 }
 
 function extractQueryIntent(text: string): InferredQueryIntent {
@@ -523,11 +538,20 @@ function extractQueryIntent(text: string): InferredQueryIntent {
   const phaseMatch = text.match(
     /(?:phase|status)\s*(?:is|=|:)?\s*["']?([A-Za-z0-9_. -]+?)(?=$|,| and | with | where )/i
   );
+  const ownerIdMatch = text.match(
+    /(?:owner|assignee|assigned to|user)\s*(?:id)?\s*(?:is|=|:)?\s*(\d+)/i
+  );
+  const referencesCurrentUser =
+    /assigned to (?:me|myself)\b/i.test(text) ||
+    /owned by (?:me|myself)\b/i.test(text) ||
+    /\bmy\s+(?:tickets?|stories?|defects?|work items?)\b/i.test(text);
 
   return {
     unassigned: normalized.includes('unassigned'),
+    currentUser: referencesCurrentUser,
     product: productMatch ? normalizePhrase(productMatch[1]) : undefined,
     owner: ownerMatch ? normalizePhrase(ownerMatch[1]) : undefined,
+    ownerId: ownerIdMatch ? Number(ownerIdMatch[1]) : undefined,
     phase: phaseMatch ? normalizePhrase(phaseMatch[1]) : undefined,
   };
 }
@@ -556,7 +580,9 @@ function inferFieldsFromText(text: string, intent: InferredQueryIntent): string[
     normalized.includes('owner') ||
     normalized.includes('assignee') ||
     normalized.includes('unassigned') ||
-    intent.owner
+    intent.owner ||
+    intent.ownerId !== undefined ||
+    intent.currentUser
   ) {
     fields.add('owner');
   }
@@ -576,27 +602,30 @@ function inferFieldsFromText(text: string, intent: InferredQueryIntent): string[
 }
 
 function inferQueryCandidates(intent: InferredQueryIntent): string[] {
+  const toContains = (value: string): string => `^*${escapeOctaneStringValue(value)}*^`;
   const ownerVariants: string[] = [];
   const phaseVariants: string[] = [];
   const productVariants: string[] = [];
+  const warnings: string[] = [];
 
   if (intent.unassigned) {
     ownerVariants.push('owner EQ {null}');
+  } else if (intent.currentUser) {
+    ownerVariants.push('owner EQ {[current_user]}');
+  } else if (intent.ownerId !== undefined) {
+    ownerVariants.push(`owner EQ {id EQ ${intent.ownerId}}`);
   } else if (intent.owner) {
-    const value = escapeContainsValue(intent.owner);
-    ownerVariants.push(`owner.name EQ ^*${value}*^`);
-    ownerVariants.push(`owner EQ ^*${value}*^`);
+    warnings.push(
+      `Owner "${intent.owner}" was skipped because ValueEdge user cross-filtering supports ID only.`
+    );
   }
   if (intent.phase) {
-    const value = escapeContainsValue(intent.phase);
-    phaseVariants.push(`phase.name EQ ^*${value}*^`);
-    phaseVariants.push(`phase EQ ^*${value}*^`);
+    phaseVariants.push(`phase EQ {name EQ ${toContains(intent.phase)}}`);
+    phaseVariants.push(`phase EQ {logical_name EQ ${toContains(intent.phase)}}`);
   }
   if (intent.product) {
-    const value = escapeContainsValue(intent.product);
-    productVariants.push(`product.name EQ ^*${value}*^`);
-    productVariants.push(`product EQ ^*${value}*^`);
-    productVariants.push(`name EQ ^*${value}*^`);
+    productVariants.push(`product EQ {name EQ ${toContains(intent.product)}}`);
+    productVariants.push(`name EQ ${toContains(intent.product)}`);
   }
 
   const dimensions = [
@@ -614,13 +643,20 @@ function inferQueryCandidates(intent: InferredQueryIntent): string[] {
         if (clauses.length === 0) {
           generated.add('id GT 0');
         } else {
-          generated.add(clauses.join(';'));
+          const query = clauses.join(';');
+          if (validateOctaneQuerySyntax(query).valid) {
+            generated.add(query);
+          }
         }
         if (generated.size >= maxCandidates) {
           return Array.from(generated);
         }
       }
     }
+  }
+
+  if (generated.size === 0 && warnings.length > 0) {
+    generated.add('id GT 0');
   }
 
   return Array.from(generated);
@@ -1077,6 +1113,11 @@ export class McpToolHandlers {
     const intent = extractQueryIntent(args.text);
     const fields = inferFieldsFromText(args.text, intent);
     const queryCandidates = inferQueryCandidates(intent);
+    if (queryCandidates.length === 0) {
+      throw new McpToolExecutionError('Unable to infer a valid query candidate', {
+        docs: VALUEEDGE_QUERY_SYNTAX_SOURCES,
+      });
+    }
 
     let chosenQuery = queryCandidates[0];
     let validationSucceeded = false;
@@ -1112,6 +1153,7 @@ export class McpToolHandlers {
       fields,
       query: chosenQuery,
       queryString: `fields=${fields.join(',')}&query=${chosenQuery}`,
+      syntaxReference: VALUEEDGE_QUERY_SYNTAX_SOURCES,
       validation: {
         attempted: true,
         requestedByCaller: args.validate,
@@ -1215,5 +1257,17 @@ export function parseConnectHeaders(
 }
 
 export function parseFieldNames(input: unknown, path: string): string[] | undefined {
-  return asOptionalStringArray(input, path);
+  const values = asOptionalStringArray(input, path);
+  if (!values) {
+    return undefined;
+  }
+  values.forEach((fieldName, index) => {
+    const validation = validateFieldExpression(fieldName);
+    if (!validation.valid) {
+      throw new McpValidationError(
+        `${path}[${index}] is invalid: ${validation.message}`
+      );
+    }
+  });
+  return values;
 }

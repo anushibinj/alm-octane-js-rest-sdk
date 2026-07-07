@@ -407,10 +407,10 @@ describe('mcp tool handlers', () => {
     };
     assert.strictEqual(payload.entityName, 'work_items');
     assert.deepStrictEqual(payload.fields, ['id', 'name', 'product']);
-    assert.strictEqual(payload.query, 'product.name EQ ^*Case360*^');
+    assert.strictEqual(payload.query, 'product EQ {name EQ ^*Case360*^}');
     assert.strictEqual(
       payload.queryString,
-      'fields=id,name,product&query=product.name EQ ^*Case360*^'
+      'fields=id,name,product&query=product EQ {name EQ ^*Case360*^}'
     );
     assert.strictEqual(payload.validation.attempted, true);
     assert.strictEqual(payload.validation.requestedByCaller, true);
@@ -419,7 +419,7 @@ describe('mcp tool handlers', () => {
     assert.deepStrictEqual(client.calls, [
       'get:work_items',
       'fields:id,name,product',
-      'query:product.name EQ ^*Case360*^',
+      'query:product EQ {name EQ ^*Case360*^}',
       'limit:5',
       'execute',
     ]);
@@ -449,7 +449,7 @@ describe('mcp tool handlers', () => {
     };
     assert.strictEqual(
       payload.query,
-      'owner EQ {null};product.name EQ ^*Case360*^'
+      'owner EQ {null};product EQ {name EQ ^*Case360*^}'
     );
     assert.strictEqual(payload.validation.attempted, true);
     assert.strictEqual(payload.validation.requestedByCaller, false);
@@ -457,7 +457,7 @@ describe('mcp tool handlers', () => {
     assert.deepStrictEqual(client.calls, [
       'get:work_items',
       'fields:id,name,owner,product',
-      'query:owner EQ {null};product.name EQ ^*Case360*^',
+      'query:owner EQ {null};product EQ {name EQ ^*Case360*^}',
       'limit:5',
       'execute',
     ]);
@@ -488,7 +488,7 @@ describe('mcp tool handlers', () => {
     assert.deepStrictEqual(payload.fields, ['id', 'name', 'owner', 'phase']);
     assert.strictEqual(
       payload.query,
-      'owner.name EQ ^*ajosephr*^;phase.name EQ ^*code review*^'
+      'phase EQ {name EQ ^*code review*^}'
     );
   });
 
@@ -548,7 +548,7 @@ describe('mcp tool handlers', () => {
 
     const result = await handlers.runTool('octane_validate_query_string', {
       sessionId: 's1',
-      queryString: 'fields=id,name&query=bad query',
+      queryString: 'fields=id,name&query=id EQ 5',
     });
     const payload = textResult(result as { content: Array<{ text: string }> }) as {
       valid: boolean;
